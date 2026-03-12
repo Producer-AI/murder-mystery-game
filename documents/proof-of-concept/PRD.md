@@ -118,7 +118,7 @@ The visual language is **Lunar New Year meets spy thriller**:
 - [ ] Per-question timer with countdown
 - [ ] Push notifications when a new round starts
 - [ ] Spectator mode polish for eliminated players
-- [ ] "Who is the Snake?" bonus question with weighted 
+- [ ] "Who is the Snake?" bonus question with weighted
 
 ---
 
