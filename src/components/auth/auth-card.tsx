@@ -1,9 +1,20 @@
 "use client";
 
-import { ArrowRight, Fingerprint, KeyRound, UserRound } from "lucide-react";
+import {
+  ArrowRight,
+  KeyRound,
+  ScrollText,
+  Shield,
+  UserRound,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { startTransition, useState } from "react";
 
+import {
+  MysteryPanel,
+  SectionEyebrow,
+  StatusPill,
+} from "@/components/game/mystery-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,9 +29,9 @@ type LoginFormState = {
 };
 
 type SignupFormState = {
-  username: string;
   email: string;
   password: string;
+  username: string;
 };
 
 const initialLoginState: LoginFormState = {
@@ -29,9 +40,9 @@ const initialLoginState: LoginFormState = {
 };
 
 const initialSignupState: SignupFormState = {
-  username: "",
   email: "",
   password: "",
+  username: "",
 };
 
 function getAuthErrorMessage(error: unknown) {
@@ -76,8 +87,8 @@ export function AuthCard() {
           password,
         })
       : await authClient.signIn.username({
-          username: identifier,
           password,
+          username: identifier,
         });
 
     if (result.error) {
@@ -95,8 +106,8 @@ export function AuthCard() {
 
     const result = await authClient.signUp.email({
       email,
-      password,
       name: username,
+      password,
       username,
     });
 
@@ -125,234 +136,271 @@ export function AuthCard() {
   };
 
   return (
-    <section className="relative isolate w-full max-w-5xl overflow-hidden border border-white/10 bg-card/80 shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur-xl">
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/70 to-transparent" />
-      <div className="grid gap-0 lg:grid-cols-[1.05fr_0.95fr]">
-        <div className="relative overflow-hidden border-b border-white/10 px-8 py-10 lg:border-r lg:border-b-0 lg:px-12 lg:py-14">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(202,161,78,0.18),transparent_32%),linear-gradient(135deg,rgba(255,255,255,0.03),transparent_58%)]" />
-          <div className="relative flex h-full flex-col justify-between gap-10">
-            <div className="space-y-6">
-              <p className="text-[0.68rem] tracking-[0.45em] text-primary/75 uppercase">
-                Blackwood Archive
+    <section className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
+      <MysteryPanel className="p-6 sm:p-8 lg:p-10" tone="dark">
+        <div className="flex h-full flex-col justify-between gap-10">
+          <div className="space-y-6">
+            <SectionEyebrow>Host Login</SectionEyebrow>
+            <div className="space-y-4">
+              <h1 className="font-display text-5xl leading-none text-[var(--mystery-gold)] sm:text-6xl">
+                Stage the case, then run the room in real time.
+              </h1>
+              <p className="max-w-xl text-sm leading-7 text-current/70 sm:text-base">
+                This side is for the host. Sign in to create a game, write the
+                answer key, unlock one clue at a time, and keep the public
+                leaderboard hidden until the finale.
               </p>
-              <div className="space-y-4">
-                <h1 className="font-display text-5xl leading-none tracking-[0.03em] text-foreground sm:text-6xl">
-                  Enter the case files.
-                </h1>
-                <p className="max-w-md text-sm leading-7 text-foreground/72 sm:text-base">
-                  The house is quiet, the witnesses are scattered, and the
-                  ledger only opens for invited names. Use a private username
-                  and password to step inside the investigation.
-                </p>
-              </div>
-            </div>
-
-            <div className="grid gap-4 text-sm text-foreground/74 sm:grid-cols-2">
-              <article className="border border-white/10 bg-black/15 p-4">
-                <Fingerprint className="mb-4 size-5 text-primary" />
-                <p className="font-medium text-foreground">
-                  Private identities
-                </p>
-                <p className="mt-2 leading-6">
-                  Sign in with either your username or your email. The session
-                  is tied to Convex from the first request.
-                </p>
-              </article>
-              <article className="border border-white/10 bg-black/15 p-4">
-                <KeyRound className="mb-4 size-5 text-primary" />
-                <p className="font-medium text-foreground">One simple flow</p>
-                <p className="mt-2 leading-6">
-                  No providers, no recovery steps, no profile editing yet. Just
-                  entry and exit for the first playable build.
-                </p>
-              </article>
             </div>
           </div>
-        </div>
 
-        <div className="px-8 py-10 lg:px-12 lg:py-14">
-          <div className="space-y-8">
-            <div className="space-y-5">
-              <div className="inline-flex border border-white/10 bg-black/20 p-1">
-                {(["login", "signup"] as const).map((value) => (
-                  <button
-                    type="button"
-                    key={value}
-                    className={cn(
-                      "min-w-32 px-4 py-2 text-xs font-medium tracking-[0.28em] uppercase transition-colors",
-                      mode === value
-                        ? "bg-primary text-primary-foreground"
-                        : "text-foreground/60 hover:text-foreground",
-                    )}
-                    onClick={() => {
-                      setMode(value);
-                      setErrorMessage(null);
-                    }}
-                  >
-                    {value === "login" ? "Log In" : "Create Account"}
-                  </button>
-                ))}
-              </div>
-
-              <div className="space-y-2">
-                <h2 className="font-display text-3xl text-foreground">
-                  {isLogin ? "Return to the manor" : "Open a new dossier"}
-                </h2>
-                <p className="text-sm leading-7 text-foreground/66">
-                  {isLogin
-                    ? "Use the identity already assigned to you."
-                    : "Create a username, add your email, and secure it with a password."}
+          <div className="grid gap-4 sm:grid-cols-3">
+            {[
+              {
+                icon: ScrollText,
+                title: "Private key",
+                text: "Questions, accepted variants, and scoring stay on the admin side only.",
+              },
+              {
+                icon: Shield,
+                title: "Live pacing",
+                text: "Unlock, lock, and score one question at a time with live guest updates.",
+              },
+              {
+                icon: UserRound,
+                title: "Guest-first entry",
+                text: "Players join from phones with only a username and an optional room password.",
+              },
+            ].map(({ icon: Icon, text, title }) => (
+              <article
+                key={title}
+                className="border border-white/8 bg-white/4 p-4"
+              >
+                <Icon className="mb-4 size-4 text-[var(--mystery-gold)]" />
+                <p className="text-sm uppercase tracking-[0.28em] text-current/60">
+                  {title}
                 </p>
-              </div>
-            </div>
+                <p className="mt-3 text-sm leading-7 text-current/68">{text}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </MysteryPanel>
 
-            <form className="space-y-5" onSubmit={handleSubmit}>
-              {isLogin ? (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="identifier">Username or Email</Label>
-                    <div className="relative">
-                      <UserRound className="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-foreground/40" />
-                      <Input
-                        id="identifier"
-                        autoComplete="username"
-                        className="pl-11"
-                        placeholder="detective.blackwood"
-                        value={loginForm.identifier}
-                        onChange={(event) =>
-                          setLoginForm((current) => ({
-                            ...current,
-                            identifier: event.target.value,
-                          }))
-                        }
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="login-password">Password</Label>
-                    <div className="relative">
-                      <KeyRound className="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-foreground/40" />
-                      <Input
-                        id="login-password"
-                        autoComplete="current-password"
-                        className="pl-11"
-                        placeholder="••••••••"
-                        type="password"
-                        value={loginForm.password}
-                        onChange={(event) =>
-                          setLoginForm((current) => ({
-                            ...current,
-                            password: event.target.value,
-                          }))
-                        }
-                        required
-                      />
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-username">Username</Label>
-                    <div className="relative">
-                      <Fingerprint className="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-foreground/40" />
-                      <Input
-                        id="signup-username"
-                        autoComplete="username"
-                        className="pl-11"
-                        placeholder="detective.blackwood"
-                        value={signupForm.username}
-                        onChange={(event) =>
-                          setSignupForm((current) => ({
-                            ...current,
-                            username: event.target.value,
-                          }))
-                        }
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-email">Email</Label>
-                    <div className="relative">
-                      <UserRound className="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-foreground/40" />
-                      <Input
-                        id="signup-email"
-                        autoComplete="email"
-                        className="pl-11"
-                        placeholder="you@blackwoodhouse.com"
-                        type="email"
-                        value={signupForm.email}
-                        onChange={(event) =>
-                          setSignupForm((current) => ({
-                            ...current,
-                            email: event.target.value,
-                          }))
-                        }
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-password">Password</Label>
-                    <div className="relative">
-                      <KeyRound className="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-foreground/40" />
-                      <Input
-                        id="signup-password"
-                        autoComplete="new-password"
-                        className="pl-11"
-                        placeholder="Choose something memorable"
-                        type="password"
-                        value={signupForm.password}
-                        onChange={(event) =>
-                          setSignupForm((current) => ({
-                            ...current,
-                            password: event.target.value,
-                          }))
-                        }
-                        required
-                      />
-                    </div>
-                  </div>
-                </>
-              )}
-
-              <div className="space-y-3 pt-2">
-                <Button
-                  className="h-12 w-full rounded-none bg-primary text-primary-foreground hover:bg-primary/85"
-                  disabled={isPending}
-                  type="submit"
+      <MysteryPanel className="p-6 sm:p-8 lg:p-10" tone="cream">
+        <div className="space-y-8 text-[var(--mystery-ink)]">
+          <div className="space-y-5">
+            <div className="inline-flex border border-[var(--mystery-crimson)]/16 bg-[rgba(139,32,32,0.04)] p-1">
+              {(["login", "signup"] as const).map((value) => (
+                <button
+                  key={value}
+                  className={cn(
+                    "min-w-32 px-4 py-2 text-xs font-medium tracking-[0.28em] uppercase transition-colors",
+                    mode === value
+                      ? "bg-[var(--mystery-crimson)] text-[var(--mystery-cream)]"
+                      : "text-[var(--mystery-crimson)]/55 hover:text-[var(--mystery-crimson)]",
+                  )}
+                  onClick={() => {
+                    setErrorMessage(null);
+                    setMode(value);
+                  }}
+                  type="button"
                 >
-                  {isPending
-                    ? isLogin
-                      ? "Checking credentials..."
-                      : "Creating account..."
-                    : isLogin
-                      ? "Enter Dashboard"
-                      : "Create Account"}
-                  <ArrowRight className="size-4" />
-                </Button>
+                  {value === "login" ? "Log In" : "Create Account"}
+                </button>
+              ))}
+            </div>
 
-                {errorMessage ? (
-                  <p className="border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm leading-6 text-destructive">
-                    {errorMessage}
-                  </p>
-                ) : null}
-
-                <p className="text-xs leading-6 text-foreground/50">
-                  {isLogin
-                    ? "If your identifier includes @, this screen treats it as an email sign-in."
-                    : "Your username is also used as your display name for now."}
-                </p>
-              </div>
-            </form>
+            <div className="space-y-3">
+              <SectionEyebrow className="text-[var(--mystery-crimson)]">
+                {isLogin ? "Return to the control room" : "Register the host"}
+              </SectionEyebrow>
+              <h2 className="font-display text-4xl leading-none">
+                {isLogin
+                  ? "Open the dashboard."
+                  : "Create your admin identity."}
+              </h2>
+              <p className="text-sm leading-7 text-[var(--mystery-ink)]/68">
+                Guests never see this screen. They join from a direct room link
+                later with just a username.
+              </p>
+            </div>
           </div>
+
+          <form className="space-y-5" onSubmit={handleSubmit}>
+            {isLogin ? (
+              <>
+                <div className="space-y-2">
+                  <Label
+                    className="text-[var(--mystery-crimson)]/72"
+                    htmlFor="identifier"
+                  >
+                    Username or Email
+                  </Label>
+                  <div className="relative">
+                    <UserRound className="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-[var(--mystery-crimson)]/35" />
+                    <Input
+                      autoComplete="username"
+                      className="border-[var(--mystery-crimson)]/20 bg-[rgba(139,32,32,0.04)] pl-11 text-[var(--mystery-ink)] focus:border-[var(--mystery-crimson)]/70"
+                      id="identifier"
+                      onChange={(event) =>
+                        setLoginForm((current) => ({
+                          ...current,
+                          identifier: event.target.value,
+                        }))
+                      }
+                      placeholder="host.blackwood"
+                      required
+                      value={loginForm.identifier}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label
+                    className="text-[var(--mystery-crimson)]/72"
+                    htmlFor="login-password"
+                  >
+                    Password
+                  </Label>
+                  <div className="relative">
+                    <KeyRound className="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-[var(--mystery-crimson)]/35" />
+                    <Input
+                      autoComplete="current-password"
+                      className="border-[var(--mystery-crimson)]/20 bg-[rgba(139,32,32,0.04)] pl-11 text-[var(--mystery-ink)] focus:border-[var(--mystery-crimson)]/70"
+                      id="login-password"
+                      onChange={(event) =>
+                        setLoginForm((current) => ({
+                          ...current,
+                          password: event.target.value,
+                        }))
+                      }
+                      placeholder="••••••••"
+                      required
+                      type="password"
+                      value={loginForm.password}
+                    />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <Label
+                    className="text-[var(--mystery-crimson)]/72"
+                    htmlFor="signup-username"
+                  >
+                    Username
+                  </Label>
+                  <div className="relative">
+                    <UserRound className="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-[var(--mystery-crimson)]/35" />
+                    <Input
+                      autoComplete="username"
+                      className="border-[var(--mystery-crimson)]/20 bg-[rgba(139,32,32,0.04)] pl-11 text-[var(--mystery-ink)] focus:border-[var(--mystery-crimson)]/70"
+                      id="signup-username"
+                      onChange={(event) =>
+                        setSignupForm((current) => ({
+                          ...current,
+                          username: event.target.value,
+                        }))
+                      }
+                      placeholder="host.blackwood"
+                      required
+                      value={signupForm.username}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label
+                    className="text-[var(--mystery-crimson)]/72"
+                    htmlFor="signup-email"
+                  >
+                    Email
+                  </Label>
+                  <div className="relative">
+                    <UserRound className="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-[var(--mystery-crimson)]/35" />
+                    <Input
+                      autoComplete="email"
+                      className="border-[var(--mystery-crimson)]/20 bg-[rgba(139,32,32,0.04)] pl-11 text-[var(--mystery-ink)] focus:border-[var(--mystery-crimson)]/70"
+                      id="signup-email"
+                      onChange={(event) =>
+                        setSignupForm((current) => ({
+                          ...current,
+                          email: event.target.value,
+                        }))
+                      }
+                      placeholder="host@blackwoodhouse.com"
+                      required
+                      type="email"
+                      value={signupForm.email}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label
+                    className="text-[var(--mystery-crimson)]/72"
+                    htmlFor="signup-password"
+                  >
+                    Password
+                  </Label>
+                  <div className="relative">
+                    <KeyRound className="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-[var(--mystery-crimson)]/35" />
+                    <Input
+                      autoComplete="new-password"
+                      className="border-[var(--mystery-crimson)]/20 bg-[rgba(139,32,32,0.04)] pl-11 text-[var(--mystery-ink)] focus:border-[var(--mystery-crimson)]/70"
+                      id="signup-password"
+                      onChange={(event) =>
+                        setSignupForm((current) => ({
+                          ...current,
+                          password: event.target.value,
+                        }))
+                      }
+                      placeholder="Choose something memorable"
+                      required
+                      type="password"
+                      value={signupForm.password}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {errorMessage ? (
+              <p className="border border-[var(--mystery-crimson)]/20 bg-[rgba(139,32,32,0.08)] px-4 py-3 text-sm leading-6 text-[var(--mystery-crimson)]">
+                {errorMessage}
+              </p>
+            ) : null}
+
+            <Button
+              className="h-12 w-full rounded-none border-[var(--mystery-crimson)] bg-[var(--mystery-crimson)] tracking-[0.2em] uppercase hover:bg-[color:color-mix(in_srgb,var(--mystery-crimson)_86%,black)]"
+              disabled={isPending}
+              type="submit"
+            >
+              {isPending
+                ? isLogin
+                  ? "Checking credentials..."
+                  : "Creating account..."
+                : isLogin
+                  ? "Enter Dashboard"
+                  : "Create Account"}
+              <ArrowRight className="size-4" />
+            </Button>
+
+            <div className="flex flex-wrap items-center gap-2 text-xs leading-6 text-[var(--mystery-ink)]/55">
+              <StatusPill
+                className="text-[var(--mystery-crimson)]"
+                tone="muted"
+              >
+                host only
+              </StatusPill>
+              {isLogin
+                ? "Use your existing Better Auth identity."
+                : "This account becomes the admin for the games you create."}
+            </div>
+          </form>
         </div>
-      </div>
+      </MysteryPanel>
     </section>
   );
 }

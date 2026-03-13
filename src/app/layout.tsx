@@ -7,9 +7,9 @@ import { cn } from "@/lib/utils";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Blackwood Archive",
+  title: "Blackwood Mystery",
   description:
-    "Simple Better Auth and Convex sign in for the murder mystery app.",
+    "Mobile-first murder mystery game hosting with Better Auth and Convex.",
 };
 
 export default async function RootLayout({

@@ -50,10 +50,10 @@
 
 :root {
   --font-sans:
-    "Avenir Next", "Segoe UI", "Helvetica Neue", "Nimbus Sans", sans-serif;
+    "Courier Prime", "Courier New", "Courier", "Nimbus Mono PS",
+    "Liberation Mono", monospace;
   --font-display:
-    "Iowan Old Style", "Palatino Linotype", "Book Antiqua", "Times New Roman",
-    serif;
+    "Iowan Old Style", "Baskerville", "Georgia", "Times New Roman", serif;
   --font-geist-mono:
     "SFMono-Regular", "Menlo", "Monaco", "Liberation Mono", monospace;
   --background: oklch(0.18 0.014 60);
@@ -88,6 +88,11 @@
   --sidebar-accent-foreground: oklch(0.94 0.018 92);
   --sidebar-border: oklch(0.99 0 0 / 12%);
   --sidebar-ring: oklch(0.72 0.11 70);
+  --mystery-cream: #faf6f1;
+  --mystery-gold: #d4a574;
+  --mystery-crimson: #8b2020;
+  --mystery-red: #6b1010;
+  --mystery-ink: #1a0a0a;
 }
 
 @layer base {
@@ -98,14 +103,15 @@
   body {
     @apply bg-background text-foreground;
     background-image:
-      linear-gradient(135deg, rgba(255, 255, 255, 0.015) 0%, transparent 36%),
-      radial-gradient(circle at top, rgba(194, 154, 82, 0.1), transparent 30%),
-      linear-gradient(180deg, rgba(0, 0, 0, 0.22), rgba(0, 0, 0, 0.35));
+      linear-gradient(135deg, rgba(255, 255, 255, 0.018) 0%, transparent 38%),
+      radial-gradient(circle at top, rgba(194, 154, 82, 0.12), transparent 30%),
+      linear-gradient(180deg, rgba(0, 0, 0, 0.14), rgba(0, 0, 0, 0.32));
     min-height: 100vh;
   }
 
   html {
     @apply font-sans;
+    background: var(--background);
   }
 
   body::before {

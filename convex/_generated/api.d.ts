@@ -9,6 +9,8 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as gameHelpers from "../gameHelpers.js";
+import type * as games from "../games.js";
 import type * as http from "../http.js";
 
 import type {
@@ -19,6 +21,8 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  gameHelpers: typeof gameHelpers;
+  games: typeof games;
   http: typeof http;
 }>;
 

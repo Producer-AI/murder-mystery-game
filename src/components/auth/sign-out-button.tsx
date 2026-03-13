@@ -27,7 +27,7 @@ export function SignOutButton() {
 
   return (
     <Button
-      className="h-11 rounded-none border-white/10 bg-transparent px-4 text-foreground hover:bg-white/5"
+      className="h-11 rounded-none border-white/10 bg-white/5 px-4 tracking-[0.18em] uppercase text-foreground hover:bg-white/10"
       disabled={isPending}
       onClick={handleSignOut}
       variant="outline"
