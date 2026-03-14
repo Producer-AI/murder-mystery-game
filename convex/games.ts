@@ -1,22 +1,24 @@
 import { ConvexError, v } from "convex/values";
 
-import type { Doc } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
 import {
-  assertCanRevealQuestion,
   assertPassword,
-  assertQuestionEditable,
+  assertRoundEditable,
   buildAcceptedAnswers,
   generateJoinCode,
   generateOpaqueToken,
   getGameByJoinCode,
   getPlayerByName,
   getPlayerByToken,
+  getPlayerSubmissions,
   getPlayersForGame,
   getQuestionById,
   getQuestionSubmissions,
-  getQuestionsForGame,
+  getQuestionsForRound,
+  getRoundById,
+  getRoundsForGame,
   getSubmissionForPlayer,
   hashJoinPassword,
   normalizeAnswer,
@@ -24,9 +26,15 @@ import {
   requireAdminUser,
   requireGameAdmin,
   requireQuestionAdmin,
+  requireRoundAdmin,
   sanitizeAnswerList,
-  sortPublicLeaderboard,
+  sortLeaderboard,
 } from "./gameHelpers";
+
+type RoundWithQuestions = {
+  questions: Doc<"questions">[];
+  round: Doc<"rounds">;
+};
 
 async function ensureUniqueJoinCode(ctx: MutationCtx) {
   for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -54,6 +62,12 @@ function requireNonEmptyField(label: string, value: string) {
   return trimmed;
 }
 
+function assertGameNotEnded(game: Doc<"games">) {
+  if (game.status === "ended") {
+    throw new ConvexError("This game has already ended.");
+  }
+}
+
 function serializePlayer(player: Doc<"players">) {
   return {
     correctCount: player.correctCount,
@@ -64,54 +78,101 @@ function serializePlayer(player: Doc<"players">) {
   };
 }
 
+async function getRoundsWithQuestions(
+  ctx: QueryCtx | MutationCtx,
+  gameId: Id<"games">,
+): Promise<RoundWithQuestions[]> {
+  const rounds = await getRoundsForGame(ctx, gameId);
+  const questionLists = await Promise.all(
+    rounds.map((round) => getQuestionsForRound(ctx, round._id)),
+  );
+
+  return rounds.map((round, index) => ({
+    questions: questionLists[index],
+    round,
+  }));
+}
+
+function getLatestStartedRound(rounds: Doc<"rounds">[]) {
+  for (let index = rounds.length - 1; index >= 0; index -= 1) {
+    if (rounds[index].status !== "draft") {
+      return rounds[index];
+    }
+  }
+
+  return null;
+}
+
 async function buildAdminGameState(ctx: QueryCtx, game: Doc<"games">) {
-  const [players, questions, currentQuestion] = await Promise.all([
+  const currentRoundPromise = game.currentRoundId
+    ? getRoundById(ctx, game.currentRoundId)
+    : Promise.resolve(null);
+
+  const [players, roundsWithQuestions, currentRound] = await Promise.all([
     getPlayersForGame(ctx, game._id),
-    getQuestionsForGame(ctx, game._id),
-    game.currentQuestionId ? ctx.db.get(game.currentQuestionId) : null,
+    getRoundsWithQuestions(ctx, game._id),
+    currentRoundPromise,
   ]);
 
-  const questionSummaries = await Promise.all(
-    questions.map(async (question) => {
-      const submissions = await getQuestionSubmissions(ctx, question._id);
+  const rounds = await Promise.all(
+    roundsWithQuestions.map(async ({ questions, round }) => {
+      const questionSummaries = await Promise.all(
+        questions.map(async (question) => {
+          const submissions = await getQuestionSubmissions(ctx, question._id);
+
+          return {
+            acceptedAnswers: question.acceptedAnswers,
+            correctAnswer: question.correctAnswer,
+            id: question._id,
+            order: question.order,
+            pointValue: question.pointValue,
+            prompt: question.prompt,
+            submissionCount: submissions.length,
+          };
+        }),
+      );
+
       return {
-        acceptedAnswers: question.acceptedAnswers,
-        correctAnswer: question.correctAnswer,
-        id: question._id,
-        order: question.order,
-        pointValue: question.pointValue,
-        prompt: question.prompt,
-        status: question.status,
-        submissionCount: submissions.length,
+        endedAt: round.endedAt,
+        id: round._id,
+        order: round.order,
+        questionCount: questions.length,
+        questions: questionSummaries,
+        startedAt: round.startedAt,
+        status: round.status,
+        title: round.title,
       };
     }),
   );
 
-  const rankedPlayers = sortPublicLeaderboard(players).map((player, index) => ({
+  const rankedPlayers = sortLeaderboard(players).map((player, index) => ({
     ...serializePlayer(player),
     rank: index + 1,
   }));
 
   return {
     canEndGame:
-      game.status === "lobby" &&
-      questions.some((question) => question.status === "scored"),
+      game.status !== "ended" &&
+      game.status !== "round_live" &&
+      rounds.some((round) => round.status === "scored"),
     game: {
       createdAt: game.createdAt,
-      currentQuestionId: game.currentQuestionId,
-      currentQuestionNumber: currentQuestion ? currentQuestion.order + 1 : null,
+      currentRoundId: game.currentRoundId,
+      currentRoundNumber: currentRound ? currentRound.order + 1 : null,
+      currentRoundTitle: currentRound?.title ?? null,
       description: game.description,
       id: game._id,
       joinCode: game.joinCode,
       playerCount: players.length,
       questionCount: game.questionCount,
       requiresPassword: Boolean(game.joinPasswordHash),
+      roundCount: rounds.length,
       status: game.status,
       title: game.title,
       updatedAt: game.updatedAt,
     },
     players: rankedPlayers,
-    questions: questionSummaries,
+    rounds,
   };
 }
 
@@ -128,21 +189,25 @@ export const listOwnedGames = query({
 
     const summaries = await Promise.all(
       games.map(async (game) => {
-        const [players, currentQuestion] = await Promise.all([
+        const currentRoundPromise = game.currentRoundId
+          ? getRoundById(ctx, game.currentRoundId)
+          : Promise.resolve(null);
+        const [players, rounds, currentRound] = await Promise.all([
           getPlayersForGame(ctx, game._id),
-          game.currentQuestionId ? ctx.db.get(game.currentQuestionId) : null,
+          getRoundsForGame(ctx, game._id),
+          currentRoundPromise,
         ]);
 
         return {
-          currentQuestionNumber: currentQuestion
-            ? currentQuestion.order + 1
-            : null,
+          currentRoundNumber: currentRound ? currentRound.order + 1 : null,
+          currentRoundTitle: currentRound?.title ?? null,
           description: game.description,
           id: game._id,
           joinCode: game.joinCode,
           playerCount: players.length,
           questionCount: game.questionCount,
           requiresPassword: Boolean(game.joinPasswordHash),
+          roundCount: rounds.length,
           status: game.status,
           title: game.title,
           updatedAt: game.updatedAt,
@@ -178,58 +243,64 @@ export const getPublicGameState = query({
       return null;
     }
 
-    const [players, questions, currentQuestion, player] = await Promise.all([
+    const currentRoundPromise = game.currentRoundId
+      ? getRoundById(ctx, game.currentRoundId)
+      : Promise.resolve(null);
+    const [players, rounds, player, activeRound] = await Promise.all([
       getPlayersForGame(ctx, game._id),
-      getQuestionsForGame(ctx, game._id),
-      game.currentQuestionId ? ctx.db.get(game.currentQuestionId) : null,
+      getRoundsForGame(ctx, game._id),
       args.guestToken
         ? getPlayerByToken(ctx, game._id, args.guestToken)
         : Promise.resolve(null),
+      currentRoundPromise,
     ]);
-    const latestRevealedQuestion = [...questions]
-      .filter((question) => question.status !== "draft")
-      .sort((left, right) => right.order - left.order)[0];
 
-    const activeSubmission =
-      player && currentQuestion
-        ? await getSubmissionForPlayer(ctx, currentQuestion._id, player._id)
-        : null;
-
-    const publicLeaderboard =
-      game.status === "finale"
-        ? sortPublicLeaderboard(players).map((rankedPlayer, index) => ({
-            ...serializePlayer(rankedPlayer),
-            rank: index + 1,
-          }))
-        : null;
+    const activeQuestions = activeRound
+      ? await getQuestionsForRound(ctx, activeRound._id)
+      : [];
+    const activeQuestionIds = new Set(
+      activeQuestions.map((question) => question._id),
+    );
+    const playerSubmissions = player
+      ? await getPlayerSubmissions(ctx, player._id)
+      : [];
+    const submittedQuestionIds = new Set(
+      playerSubmissions
+        .filter((submission) => activeQuestionIds.has(submission.questionId))
+        .map((submission) => submission.questionId),
+    );
+    const latestStartedRound = getLatestStartedRound(rounds);
 
     return {
-      activeQuestion:
-        game.status === "question_live" && currentQuestion
-          ? {
-              id: currentQuestion._id,
-              number: currentQuestion.order + 1,
-              prompt: currentQuestion.prompt,
-            }
-          : null,
+      activeRound: activeRound
+        ? {
+            id: activeRound._id,
+            number: activeRound.order + 1,
+            questionCount: activeQuestions.length,
+            questions: activeQuestions.map((question) => ({
+              hasSubmitted: submittedQuestionIds.has(question._id),
+              id: question._id,
+              number: question.order + 1,
+              pointValue: question.pointValue,
+              prompt: question.prompt,
+            })),
+            title: activeRound.title,
+          }
+        : null,
       game: {
-        currentQuestionNumber: currentQuestion
-          ? currentQuestion.order + 1
-          : latestRevealedQuestion
-            ? latestRevealedQuestion.order + 1
-            : null,
         description: game.description,
         id: game._id,
         joinCode: game.joinCode,
+        latestRoundNumber: latestStartedRound
+          ? latestStartedRound.order + 1
+          : null,
         playerCount: players.length,
         questionCount: game.questionCount,
         requiresPassword: Boolean(game.joinPasswordHash),
         status: game.status,
         title: game.title,
       },
-      hasSubmittedCurrentQuestion: Boolean(activeSubmission),
       player: player ? serializePlayer(player) : null,
-      publicLeaderboard,
     };
   },
 });
@@ -254,7 +325,7 @@ export const createGame = mutation({
     const gameId = await ctx.db.insert("games", {
       createdAt: now,
       creatorUserId: user._id,
-      currentQuestionId: null,
+      currentRoundId: null,
       description,
       joinCode,
       joinPasswordHash,
@@ -295,19 +366,163 @@ export const updateGame = mutation({
   },
 });
 
+export const createRound = mutation({
+  args: {
+    gameId: v.id("games"),
+    title: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const { game } = await requireGameAdmin(ctx, args.gameId);
+    assertGameNotEnded(game);
+
+    const title = requireNonEmptyField("Round title", args.title);
+    const rounds = await getRoundsForGame(ctx, game._id);
+    const now = Date.now();
+
+    const roundId = await ctx.db.insert("rounds", {
+      createdAt: now,
+      endedAt: null,
+      gameId: game._id,
+      order: rounds.length,
+      startedAt: null,
+      status: "draft",
+      title,
+      updatedAt: now,
+    });
+
+    await ctx.db.patch(game._id, {
+      updatedAt: now,
+    });
+
+    return { roundId };
+  },
+});
+
+export const updateRound = mutation({
+  args: {
+    roundId: v.id("rounds"),
+    title: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const { game, round } = await requireRoundAdmin(ctx, args.roundId);
+    assertGameNotEnded(game);
+    assertRoundEditable(round);
+    const now = Date.now();
+
+    await Promise.all([
+      ctx.db.patch(round._id, {
+        title: requireNonEmptyField("Round title", args.title),
+        updatedAt: now,
+      }),
+      ctx.db.patch(game._id, {
+        updatedAt: now,
+      }),
+    ]);
+
+    return { success: true };
+  },
+});
+
+export const deleteRound = mutation({
+  args: {
+    roundId: v.id("rounds"),
+  },
+  handler: async (ctx, args) => {
+    const { game, round } = await requireRoundAdmin(ctx, args.roundId);
+    assertGameNotEnded(game);
+    assertRoundEditable(round);
+
+    const [questions, rounds] = await Promise.all([
+      getQuestionsForRound(ctx, round._id),
+      getRoundsForGame(ctx, game._id),
+    ]);
+    const remainingRounds = rounds.filter(
+      (candidate) => candidate._id !== round._id,
+    );
+    const now = Date.now();
+
+    await Promise.all([
+      ...questions.map((question) => ctx.db.delete(question._id)),
+      ctx.db.delete(round._id),
+      ...remainingRounds
+        .filter((candidate) => candidate.order > round.order)
+        .map((candidate) =>
+          ctx.db.patch(candidate._id, {
+            order: candidate.order - 1,
+            updatedAt: now,
+          }),
+        ),
+      ctx.db.patch(game._id, {
+        questionCount: Math.max(0, game.questionCount - questions.length),
+        updatedAt: now,
+      }),
+    ]);
+
+    return { success: true };
+  },
+});
+
+export const moveRound = mutation({
+  args: {
+    direction: v.union(v.literal("up"), v.literal("down")),
+    roundId: v.id("rounds"),
+  },
+  handler: async (ctx, args) => {
+    const { game, round } = await requireRoundAdmin(ctx, args.roundId);
+    assertGameNotEnded(game);
+    assertRoundEditable(round);
+
+    const rounds = await getRoundsForGame(ctx, game._id);
+    const draftRounds = rounds.filter(
+      (candidate) => candidate.status === "draft",
+    );
+    const currentIndex = draftRounds.findIndex(
+      (candidate) => candidate._id === round._id,
+    );
+    const targetIndex =
+      args.direction === "up" ? currentIndex - 1 : currentIndex + 1;
+
+    if (
+      currentIndex < 0 ||
+      targetIndex < 0 ||
+      targetIndex >= draftRounds.length
+    ) {
+      return { success: true };
+    }
+
+    const targetRound = draftRounds[targetIndex];
+    const now = Date.now();
+
+    await Promise.all([
+      ctx.db.patch(round._id, {
+        order: targetRound.order,
+        updatedAt: now,
+      }),
+      ctx.db.patch(targetRound._id, {
+        order: round.order,
+        updatedAt: now,
+      }),
+      ctx.db.patch(game._id, {
+        updatedAt: now,
+      }),
+    ]);
+
+    return { success: true };
+  },
+});
+
 export const createQuestion = mutation({
   args: {
     acceptedAnswers: v.array(v.string()),
     correctAnswer: v.string(),
-    gameId: v.id("games"),
     pointValue: v.number(),
     prompt: v.string(),
+    roundId: v.id("rounds"),
   },
   handler: async (ctx, args) => {
-    const { game } = await requireGameAdmin(ctx, args.gameId);
-    if (game.status === "finale") {
-      throw new ConvexError("You cannot add questions after the game ends.");
-    }
+    const { game, round } = await requireRoundAdmin(ctx, args.roundId);
+    assertGameNotEnded(game);
+    assertRoundEditable(round);
 
     const prompt = requireNonEmptyField("Prompt", args.prompt);
     const correctAnswer = requireNonEmptyField(
@@ -318,7 +533,7 @@ export const createQuestion = mutation({
       (value) => normalizeAnswer(value) !== normalizeAnswer(correctAnswer),
     );
     const pointValue = Math.max(1, Math.floor(args.pointValue));
-    const existingQuestions = await getQuestionsForGame(ctx, game._id);
+    const existingQuestions = await getQuestionsForRound(ctx, round._id);
     const now = Date.now();
 
     const questionId = await ctx.db.insert("questions", {
@@ -329,12 +544,12 @@ export const createQuestion = mutation({
       order: existingQuestions.length,
       pointValue,
       prompt,
-      status: "draft",
+      roundId: round._id,
       updatedAt: now,
     });
 
     await ctx.db.patch(game._id, {
-      questionCount: existingQuestions.length + 1,
+      questionCount: game.questionCount + 1,
       updatedAt: now,
     });
 
@@ -351,8 +566,13 @@ export const updateQuestion = mutation({
     questionId: v.id("questions"),
   },
   handler: async (ctx, args) => {
-    const { question } = await requireQuestionAdmin(ctx, args.questionId);
-    assertQuestionEditable(question);
+    const { game, round, question } = await requireQuestionAdmin(
+      ctx,
+      args.questionId,
+    );
+    assertGameNotEnded(game);
+    assertRoundEditable(round);
+    const now = Date.now();
 
     const prompt = requireNonEmptyField("Prompt", args.prompt);
     const correctAnswer = requireNonEmptyField(
@@ -363,13 +583,18 @@ export const updateQuestion = mutation({
       (value) => normalizeAnswer(value) !== normalizeAnswer(correctAnswer),
     );
 
-    await ctx.db.patch(question._id, {
-      acceptedAnswers,
-      correctAnswer,
-      pointValue: Math.max(1, Math.floor(args.pointValue)),
-      prompt,
-      updatedAt: Date.now(),
-    });
+    await Promise.all([
+      ctx.db.patch(question._id, {
+        acceptedAnswers,
+        correctAnswer,
+        pointValue: Math.max(1, Math.floor(args.pointValue)),
+        prompt,
+        updatedAt: now,
+      }),
+      ctx.db.patch(game._id, {
+        updatedAt: now,
+      }),
+    ]);
 
     return { success: true };
   },
@@ -380,31 +605,34 @@ export const deleteQuestion = mutation({
     questionId: v.id("questions"),
   },
   handler: async (ctx, args) => {
-    const { game, question } = await requireQuestionAdmin(ctx, args.questionId);
-    assertQuestionEditable(question);
+    const { game, question, round } = await requireQuestionAdmin(
+      ctx,
+      args.questionId,
+    );
+    assertGameNotEnded(game);
+    assertRoundEditable(round);
 
-    const questions = await getQuestionsForGame(ctx, game._id);
+    const questions = await getQuestionsForRound(ctx, round._id);
     const remainingQuestions = questions.filter(
       (candidate) => candidate._id !== question._id,
     );
+    const now = Date.now();
 
-    await ctx.db.delete(question._id);
-
-    await Promise.all(
-      remainingQuestions
+    await Promise.all([
+      ctx.db.delete(question._id),
+      ...remainingQuestions
         .filter((candidate) => candidate.order > question.order)
         .map((candidate) =>
           ctx.db.patch(candidate._id, {
             order: candidate.order - 1,
-            updatedAt: Date.now(),
+            updatedAt: now,
           }),
         ),
-    );
-
-    await ctx.db.patch(game._id, {
-      questionCount: remainingQuestions.length,
-      updatedAt: Date.now(),
-    });
+      ctx.db.patch(game._id, {
+        questionCount: Math.max(0, game.questionCount - 1),
+        updatedAt: now,
+      }),
+    ]);
 
     return { success: true };
   },
@@ -416,14 +644,15 @@ export const moveQuestion = mutation({
     questionId: v.id("questions"),
   },
   handler: async (ctx, args) => {
-    const { game, question } = await requireQuestionAdmin(ctx, args.questionId);
-    assertQuestionEditable(question);
-
-    const questions = await getQuestionsForGame(ctx, game._id);
-    const draftQuestions = questions.filter(
-      (candidate) => candidate.status === "draft",
+    const { game, question, round } = await requireQuestionAdmin(
+      ctx,
+      args.questionId,
     );
-    const currentIndex = draftQuestions.findIndex(
+    assertGameNotEnded(game);
+    assertRoundEditable(round);
+
+    const questions = await getQuestionsForRound(ctx, round._id);
+    const currentIndex = questions.findIndex(
       (candidate) => candidate._id === question._id,
     );
     const targetIndex =
@@ -432,12 +661,12 @@ export const moveQuestion = mutation({
     if (
       currentIndex < 0 ||
       targetIndex < 0 ||
-      targetIndex >= draftQuestions.length
+      targetIndex >= questions.length
     ) {
       return { success: true };
     }
 
-    const targetQuestion = draftQuestions[targetIndex];
+    const targetQuestion = questions[targetIndex];
     const now = Date.now();
 
     await Promise.all([
@@ -458,25 +687,44 @@ export const moveQuestion = mutation({
   },
 });
 
-export const unlockQuestion = mutation({
+export const startRound = mutation({
   args: {
-    questionId: v.id("questions"),
+    roundId: v.id("rounds"),
   },
   handler: async (ctx, args) => {
-    const { game, question } = await requireQuestionAdmin(ctx, args.questionId);
-    assertCanRevealQuestion(game);
-    assertQuestionEditable(question);
+    const { game, round } = await requireRoundAdmin(ctx, args.roundId);
+    assertGameNotEnded(game);
+
+    if (game.status === "round_live") {
+      if (game.currentRoundId === round._id) {
+        throw new ConvexError("This round is already live.");
+      }
+
+      throw new ConvexError("Another round is already live.");
+    }
+
+    if (round.status !== "draft") {
+      throw new ConvexError("Only draft rounds can be started.");
+    }
+
+    const questions = await getQuestionsForRound(ctx, round._id);
+    if (questions.length === 0) {
+      throw new ConvexError(
+        "Add at least one question before starting a round.",
+      );
+    }
 
     const now = Date.now();
 
     await Promise.all([
-      ctx.db.patch(question._id, {
+      ctx.db.patch(round._id, {
+        startedAt: now,
         status: "live",
         updatedAt: now,
       }),
       ctx.db.patch(game._id, {
-        currentQuestionId: question._id,
-        status: "question_live",
+        currentRoundId: round._id,
+        status: "round_live",
         updatedAt: now,
       }),
     ]);
@@ -485,105 +733,84 @@ export const unlockQuestion = mutation({
   },
 });
 
-export const lockQuestion = mutation({
+export const endRound = mutation({
   args: {
-    questionId: v.id("questions"),
+    roundId: v.id("rounds"),
   },
   handler: async (ctx, args) => {
-    const { game, question } = await requireQuestionAdmin(ctx, args.questionId);
+    const { game, round } = await requireRoundAdmin(ctx, args.roundId);
 
-    if (
-      game.status !== "question_live" ||
-      game.currentQuestionId !== question._id
-    ) {
-      throw new ConvexError("This question is not currently live.");
+    if (game.status !== "round_live" || game.currentRoundId !== round._id) {
+      throw new ConvexError("This round is not currently live.");
     }
 
-    if (question.status !== "live") {
-      throw new ConvexError("Only live questions can be locked.");
+    if (round.status !== "live") {
+      throw new ConvexError("Only live rounds can be ended.");
     }
 
-    const now = Date.now();
-
-    await Promise.all([
-      ctx.db.patch(question._id, {
-        status: "locked",
-        updatedAt: now,
-      }),
-      ctx.db.patch(game._id, {
-        status: "question_locked",
-        updatedAt: now,
-      }),
-    ]);
-
-    return { success: true };
-  },
-});
-
-export const scoreQuestion = mutation({
-  args: {
-    questionId: v.id("questions"),
-  },
-  handler: async (ctx, args) => {
-    const { game, question } = await requireQuestionAdmin(ctx, args.questionId);
-
-    if (
-      game.status !== "question_locked" ||
-      game.currentQuestionId !== question._id
-    ) {
-      throw new ConvexError("Lock this question before scoring it.");
-    }
-
-    if (question.status !== "locked") {
-      throw new ConvexError("Only locked questions can be scored.");
-    }
-
-    const [players, submissions] = await Promise.all([
+    const [players, questions] = await Promise.all([
       getPlayersForGame(ctx, game._id),
-      getQuestionSubmissions(ctx, question._id),
+      getQuestionsForRound(ctx, round._id),
     ]);
-    const playerMap = new Map(players.map((player) => [player._id, player]));
-    const acceptedAnswers = buildAcceptedAnswers(question);
+    const playerById = new Map(players.map((player) => [player._id, player]));
+    const playerScoreDeltas = new Map<
+      Id<"players">,
+      { correctCount: number; totalPoints: number }
+    >();
 
-    for (const submission of submissions) {
-      const player = playerMap.get(submission.playerId);
-      if (!player) {
-        continue;
-      }
+    for (const question of questions) {
+      const acceptedAnswers = buildAcceptedAnswers(question);
+      const submissions = await getQuestionSubmissions(ctx, question._id);
 
-      const isCorrect = acceptedAnswers.has(submission.normalizedAnswer);
-      const pointsAwarded = isCorrect ? question.pointValue : 0;
+      for (const submission of submissions) {
+        const isCorrect = acceptedAnswers.has(submission.normalizedAnswer);
+        const pointsAwarded = isCorrect ? question.pointValue : 0;
 
-      await ctx.db.patch(submission._id, {
-        isCorrect,
-        pointsAwarded,
-      });
+        await ctx.db.patch(submission._id, {
+          isCorrect,
+          pointsAwarded,
+        });
 
-      if (isCorrect) {
-        const nextPlayer = {
-          ...player,
-          correctCount: player.correctCount + 1,
-          totalPoints: player.totalPoints + question.pointValue,
+        if (!isCorrect) {
+          continue;
+        }
+
+        const currentTotals = playerScoreDeltas.get(submission.playerId) ?? {
+          correctCount: 0,
+          totalPoints: 0,
         };
 
-        playerMap.set(player._id, nextPlayer);
-
-        await ctx.db.patch(player._id, {
-          correctCount: nextPlayer.correctCount,
-          totalPoints: nextPlayer.totalPoints,
+        playerScoreDeltas.set(submission.playerId, {
+          correctCount: currentTotals.correctCount + 1,
+          totalPoints: currentTotals.totalPoints + question.pointValue,
         });
       }
     }
 
+    await Promise.all(
+      Array.from(playerScoreDeltas.entries()).map(([playerId, totals]) => {
+        const player = playerById.get(playerId);
+        if (!player) {
+          return Promise.resolve();
+        }
+
+        return ctx.db.patch(playerId, {
+          correctCount: player.correctCount + totals.correctCount,
+          totalPoints: player.totalPoints + totals.totalPoints,
+        });
+      }),
+    );
+
     const now = Date.now();
 
     await Promise.all([
-      ctx.db.patch(question._id, {
+      ctx.db.patch(round._id, {
+        endedAt: now,
         status: "scored",
         updatedAt: now,
       }),
       ctx.db.patch(game._id, {
-        currentQuestionId: null,
+        currentRoundId: null,
         status: "lobby",
         updatedAt: now,
       }),
@@ -600,22 +827,22 @@ export const endGame = mutation({
   handler: async (ctx, args) => {
     const { game } = await requireGameAdmin(ctx, args.gameId);
 
-    if (game.status === "question_live" || game.status === "question_locked") {
-      throw new ConvexError(
-        "Finish the active question before ending the game.",
-      );
+    if (game.status === "ended") {
+      throw new ConvexError("This game has already ended.");
     }
 
-    const questions = await getQuestionsForGame(ctx, game._id);
-    if (!questions.some((question) => question.status === "scored")) {
-      throw new ConvexError(
-        "Score at least one question before ending the game.",
-      );
+    if (game.status === "round_live") {
+      throw new ConvexError("Finish the active round before ending the game.");
+    }
+
+    const rounds = await getRoundsForGame(ctx, game._id);
+    if (!rounds.some((round) => round.status === "scored")) {
+      throw new ConvexError("Score at least one round before ending the game.");
     }
 
     await ctx.db.patch(game._id, {
-      currentQuestionId: null,
-      status: "finale",
+      currentRoundId: null,
+      status: "ended",
       updatedAt: Date.now(),
     });
 
@@ -636,7 +863,7 @@ export const joinGame = mutation({
       throw new ConvexError("Game not found.");
     }
 
-    if (game.status === "finale") {
+    if (game.status === "ended") {
       throw new ConvexError("This game has already finished.");
     }
 
@@ -709,6 +936,7 @@ export const submitAnswer = mutation({
     answer: v.string(),
     guestToken: v.string(),
     joinCode: v.string(),
+    questionId: v.id("questions"),
   },
   handler: async (ctx, args) => {
     const game = await getGameByJoinCode(
@@ -719,8 +947,8 @@ export const submitAnswer = mutation({
       throw new ConvexError("Game not found.");
     }
 
-    if (game.status !== "question_live" || !game.currentQuestionId) {
-      throw new ConvexError("There is no live question right now.");
+    if (game.status !== "round_live" || !game.currentRoundId) {
+      throw new ConvexError("There is no live round right now.");
     }
 
     const player = await getPlayerByToken(ctx, game._id, args.guestToken);
@@ -728,9 +956,19 @@ export const submitAnswer = mutation({
       throw new ConvexError("Join the game before submitting an answer.");
     }
 
-    const question = await getQuestionById(ctx, game.currentQuestionId);
-    if (question.status !== "live") {
-      throw new ConvexError("This question is no longer accepting answers.");
+    const [question, round] = await Promise.all([
+      getQuestionById(ctx, args.questionId),
+      getRoundById(ctx, game.currentRoundId),
+    ]);
+
+    if (question.gameId !== game._id || question.roundId !== round._id) {
+      throw new ConvexError(
+        "This question is not accepting answers right now.",
+      );
+    }
+
+    if (round.status !== "live") {
+      throw new ConvexError("This round is no longer accepting answers.");
     }
 
     const existingSubmission = await getSubmissionForPlayer(

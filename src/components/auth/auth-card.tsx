@@ -146,9 +146,9 @@ export function AuthCard() {
                 Stage the case, then run the room in real time.
               </h1>
               <p className="max-w-xl text-sm leading-7 text-current/70 sm:text-base">
-                This side is for the host. Sign in to create a game, write the
-                answer key, unlock one clue at a time, and keep the public
-                leaderboard hidden until the finale.
+                This side is for the host. Sign in to create a game, build
+                rounds, write the answer key, and keep standings on the admin
+                side only.
               </p>
             </div>
           </div>
@@ -163,7 +163,7 @@ export function AuthCard() {
               {
                 icon: Shield,
                 title: "Live pacing",
-                text: "Unlock, lock, and score one question at a time with live guest updates.",
+                text: "Start and end full rounds with live guest updates and automatic scoring when a round closes.",
               },
               {
                 icon: UserRound,

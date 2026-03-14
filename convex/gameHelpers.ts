@@ -6,15 +6,13 @@ import { authComponent } from "./auth";
 
 export const gameStatusValidator = v.union(
   v.literal("lobby"),
-  v.literal("question_live"),
-  v.literal("question_locked"),
-  v.literal("finale"),
+  v.literal("round_live"),
+  v.literal("ended"),
 );
 
-export const questionStatusValidator = v.union(
+export const roundStatusValidator = v.union(
   v.literal("draft"),
   v.literal("live"),
-  v.literal("locked"),
   v.literal("scored"),
 );
 
@@ -54,6 +52,8 @@ export function sortPublicLeaderboard<
     return left.joinedAt - right.joinedAt;
   });
 }
+
+export const sortLeaderboard = sortPublicLeaderboard;
 
 export function generateOpaqueToken() {
   return `${Math.random().toString(36).slice(2)}${Math.random()
@@ -138,10 +138,37 @@ export async function getQuestionById(
   return question;
 }
 
+export async function getRoundById(ctx: ReaderCtx, roundId: Id<"rounds">) {
+  const round = await ctx.db.get(roundId);
+
+  if (!round) {
+    throw new ConvexError("Round not found.");
+  }
+
+  return round;
+}
+
+export async function getRoundsForGame(ctx: ReaderCtx, gameId: Id<"games">) {
+  return await ctx.db
+    .query("rounds")
+    .withIndex("by_game_order", (query) => query.eq("gameId", gameId))
+    .collect();
+}
+
 export async function getQuestionsForGame(ctx: ReaderCtx, gameId: Id<"games">) {
   return await ctx.db
     .query("questions")
-    .withIndex("by_game_order", (query) => query.eq("gameId", gameId))
+    .withIndex("by_game", (query) => query.eq("gameId", gameId))
+    .collect();
+}
+
+export async function getQuestionsForRound(
+  ctx: ReaderCtx,
+  roundId: Id<"rounds">,
+) {
+  return await ctx.db
+    .query("questions")
+    .withIndex("by_round_order", (query) => query.eq("roundId", roundId))
     .collect();
 }
 
@@ -188,6 +215,16 @@ export async function getPlayerByToken(
     .unique();
 }
 
+export async function getPlayerSubmissions(
+  ctx: ReaderCtx,
+  playerId: Id<"players">,
+) {
+  return await ctx.db
+    .query("submissions")
+    .withIndex("by_player", (query) => query.eq("playerId", playerId))
+    .collect();
+}
+
 export async function getPlayerByName(
   ctx: ReaderCtx,
   gameId: Id<"games">,
@@ -214,35 +251,29 @@ export async function requireGameAdmin(ctx: ReaderCtx, gameId: Id<"games">) {
   return { game, user };
 }
 
+export async function requireRoundAdmin(ctx: ReaderCtx, roundId: Id<"rounds">) {
+  const round = await getRoundById(ctx, roundId);
+  const { game, user } = await requireGameAdmin(ctx, round.gameId);
+
+  return { game, round, user };
+}
+
 export async function requireQuestionAdmin(
   ctx: ReaderCtx,
   questionId: Id<"questions">,
 ) {
   const question = await getQuestionById(ctx, questionId);
-  const { game, user } = await requireGameAdmin(ctx, question.gameId);
+  const [round, { game, user }] = await Promise.all([
+    getRoundById(ctx, question.roundId),
+    requireGameAdmin(ctx, question.gameId),
+  ]);
 
-  return { game, question, user };
+  return { game, question, round, user };
 }
 
-export function assertQuestionEditable(question: Doc<"questions">) {
-  if (question.status !== "draft") {
-    throw new ConvexError("Only draft questions can be edited.");
-  }
-}
-
-export function assertCanRevealQuestion(game: Doc<"games">) {
-  if (game.status === "question_live") {
-    throw new ConvexError("Another question is already live.");
-  }
-
-  if (game.status === "question_locked") {
-    throw new ConvexError(
-      "Score the locked question before unlocking another.",
-    );
-  }
-
-  if (game.status === "finale") {
-    throw new ConvexError("This game has already ended.");
+export function assertRoundEditable(round: Doc<"rounds">) {
+  if (round.status !== "draft") {
+    throw new ConvexError("Only draft rounds can be edited.");
   }
 }
 

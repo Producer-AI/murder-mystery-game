@@ -93,12 +93,12 @@ export function DashboardHome({
             <div className="space-y-4">
               <SectionEyebrow>Creator Dashboard</SectionEyebrow>
               <DisplayTitle className="max-w-3xl text-[2.6rem] sm:text-6xl">
-                Build the case, lock the clues, and run the room live.
+                Build the case, stage the rounds, and run the room live.
               </DisplayTitle>
               <p className="max-w-2xl text-sm leading-7 text-current/70 sm:text-base">
                 Auth is already in place. This dashboard now becomes the control
-                room for question pacing, guest invites, and the private answer
-                key that stays hidden until you reveal the finale.
+                room for round pacing, guest invites, and the private standings
+                board that never appears on player phones.
               </p>
             </div>
 
@@ -120,8 +120,7 @@ export function DashboardHome({
             label="Live Rooms"
             tone="dark"
             value={
-              games?.filter((game) => game.status === "question_live").length ??
-              0
+              games?.filter((game) => game.status === "round_live").length ?? 0
             }
           />
         </section>
@@ -139,7 +138,7 @@ export function DashboardHome({
                 <p className="max-w-xl text-sm leading-7 text-[var(--mystery-ink)]/70">
                   Set the title, leave private notes in the description, and
                   optionally gate entry with a password before you start
-                  unlocking questions.
+                  building rounds.
                 </p>
               </div>
 
@@ -225,7 +224,7 @@ export function DashboardHome({
                 {[
                   {
                     icon: ScrollText,
-                    text: "Author draft questions with a primary answer, accepted variants, and point value.",
+                    text: "Build draft rounds, then add one or more questions to each with a primary answer, accepted variants, and point value.",
                   },
                   {
                     icon: QrCode,
@@ -233,7 +232,7 @@ export function DashboardHome({
                   },
                   {
                     icon: Users,
-                    text: "Unlock one question at a time, lock it, score privately, and reveal the leaderboard only in the finale.",
+                    text: "Start one round at a time, let players answer the full round, and keep the leaderboard visible only to the host.",
                   },
                 ].map(({ icon: Icon, text }) => (
                   <div
@@ -285,6 +284,11 @@ export function DashboardHome({
                         <StatusPill tone="gold">
                           {game.status.replace("_", " ")}
                         </StatusPill>
+                        {game.currentRoundNumber ? (
+                          <StatusPill tone="muted">
+                            round {game.currentRoundNumber}
+                          </StatusPill>
+                        ) : null}
                         {game.requiresPassword ? (
                           <StatusPill tone="muted">password</StatusPill>
                         ) : null}
@@ -305,7 +309,7 @@ export function DashboardHome({
                     </div>
                   </div>
 
-                  <div className="mt-6 grid gap-3 text-sm sm:grid-cols-4">
+                  <div className="mt-6 grid gap-3 text-sm sm:grid-cols-5">
                     <div>
                       <p className="text-[0.68rem] tracking-[0.28em] uppercase text-current/45">
                         Join Code
@@ -320,6 +324,14 @@ export function DashboardHome({
                       </p>
                       <p className="mt-2 text-[var(--mystery-gold)]">
                         {game.playerCount}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[0.68rem] tracking-[0.28em] uppercase text-current/45">
+                        Rounds
+                      </p>
+                      <p className="mt-2 text-[var(--mystery-gold)]">
+                        {game.roundCount}
                       </p>
                     </div>
                     <div>
